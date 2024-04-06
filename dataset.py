@@ -5,6 +5,13 @@ import numpy as np
 import dgl
 import torch
 
+import os.path
+from collections import defaultdict
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+import dgl
+import torch
+
 class BaseDataset(object):
     def __init__(self, trainpath, testpath, statpath, validpath):
         """base Dataset. Read data files and preprocess.
@@ -125,25 +132,56 @@ class BaseDataset(object):
             dict[(quad[1] + self.num_r, quad[3])].append([quad[2], quad[0], quad[3]])
         return dict
 
+    def get_relation_triples(self,quadruples):
+        out_dict = defaultdict(set)
+        in_dict = defaultdict(set)
+        for facts in quadruples:
+            if isinstance(facts, (list, tuple)):
+                out_dict[facts[0]].add((facts[1], facts[3]))
+                in_dict[facts[2]].add((facts[1], facts[3]))
+                in_dict[facts[0]].add((facts[1] + self.num_r, facts[3]))
+                in_dict[facts[2]].add((facts[1] + self.num_r, facts[3]))
+            else:
+                # Handle cases where facts is not iterable or doesn't have enough elements
+                print("Invalid facts format:", facts)
+
+        entities = set(out_dict.keys()).union(in_dict.keys())
+
+        r_triples = set()
+        return list(r_triples)
+
 class DGLGraphDataset(object):
-    def __init__(self, snapshots, n_ent, n_rel):
+    def __init__(self, ent_snapshots, n_ent, n_rel):
         self.n_ent = n_ent
         self.n_rel = n_rel
-        self.snapshots_num = len(snapshots)
-        self.snapshots = snapshots
-        self.dgl_graph_dict, self.dgl_graphs = self.get_dglGraph_dict(snapshots)
+        self.n_hyper_rel = 4
+        self.snapshots_num = len(ent_snapshots)
+        self.snapshots = ent_snapshots
+
+        #self.rel_triples = defaultdict(set)
+        #for r1, hyper_r, r2,t in rel_triples:
+          #self.rel_triples[t].add((r1,hyper_r,r2))
+
+
+        self.dgl_graph_dict, self.dgl_graphs, self.dgl_rel_graphs = self.get_dglGraph_dict(ent_snapshots)
 
     def get_dglGraph_dict(self, snapshots):
         dgl_graph_dict = {}
+        dgl_rels_dict = {}
         dgl_graph = []
         for (g, time) in snapshots:
             graph = self.build_sub_graph(self.n_ent, self.n_rel, g, time)
             dgl_graph_dict[time] = graph
             dgl_graph.append(graph)
+            #rels_graph = self.get_relation_dglGraph( self.rel_triples[time], self.n_rel * 2 + 1, self.n_hyper_rel)
+            #dgl_rels_dict[time] = rels_graph
         PAD_graph = self.build_sub_graph(self.n_ent, self.n_rel, np.array([]), 0)
         dgl_graph_dict[-1] = PAD_graph
+        #PAD_rel_graph = self.get_relation_dglGraph(np.array([]), self.n_rel * 2 + 1, self.n_hyper_rel)
+
+        #dgl_rels_dict[-1] = PAD_rel_graph
         dgl_graph.insert(0, PAD_graph)
-        return dgl_graph_dict, dgl_graph
+        return dgl_graph_dict, dgl_graph, dgl_rels_dict
 
     def build_sub_graph(self, num_nodes, num_rels, triples, time):
         if triples.size != 0:
@@ -199,6 +237,41 @@ class DGLGraphDataset(object):
         norm = 1.0 / in_deg
         return norm
 
+    def get_relation_dglGraph(self, triples, num_nodes, num_rels):
+        triples = np.array(list(triples))
+        if triples.size != 0:
+            src, rel, dst = triples.transpose()
+            src, dst = np.concatenate((src, dst)), np.concatenate((dst, src))
+            rel = np.concatenate((rel, rel + num_rels))
+        else:
+            src, rel, dst = np.array([]), np.array([]), np.array([])
+        g = dgl.DGLGraph()
+        g.add_nodes(num_nodes)
+        g.add_edges(src, dst)
+
+        node_id = torch.arange(0, num_nodes, dtype=torch.long).view(-1, 1)
+        g.ndata.update({'id': node_id})
+        g.edata['type'] = torch.LongTensor(rel)
+        return g
+
+    def get_nhop_rel_subgraph(self, root_node, time, n=2, max_nodes=10):
+        g = self.dgl_rel_graphs[time]
+        total_nodes = set()
+        total_nodes.add(root_node)
+        for i in range(n):
+            step_nodes = total_nodes.copy()
+            for node in step_nodes:
+                neighbor_n, _ = g.in_edges(node)
+                neighbor_n = set(neighbor_n.tolist())
+
+                if len(total_nodes) + len(neighbor_n) > max_nodes:
+                  total_nodes |= set(list(neighbor_n)[:max_nodes - len(total_nodes)])
+                  #total_nodes = set(list(total_nodes)[:max_nodes])
+                  break
+                else:
+                  total_nodes |= neighbor_n
+        sub_g = g.subgraph(list(total_nodes), store_ids=False)
+        return sub_g
 
 class QuadruplesDataset(Dataset):
     def __init__(self, quadruples, history_len, dglGraphs, baseDataset, history_mode='recent', nhop=2,
@@ -233,14 +306,14 @@ class QuadruplesDataset(Dataset):
             history_graphs, history_times, head_entity_ids, graphs_node_num = \
                 self.get_history_graphs(head_entity, relation, timestamp, self.history_mode, delta_t)
             return head_entity, relation, tail_entity, timestamp, \
-                  history_graphs, history_times, head_entity_ids, graphs_node_num
+                  history_graphs, history_times, head_entity_ids, graphs_node_num#, sub_rel_graph, relation_ids, static_ent_graph, static_ent_ids
         else:
             quad = self.quadruples[idx]
             head_entity, relation, tail_entity, timestamp = quad[0], quad[1], quad[2], quad[3]
             history_graphs, history_times, head_entity_ids, graphs_node_num = \
                 self.get_history_graphs(head_entity, relation, timestamp, self.history_mode, self.delta_t)
             return head_entity, relation, tail_entity, timestamp, \
-                   history_graphs, history_times, head_entity_ids, graphs_node_num
+                   history_graphs, history_times, head_entity_ids, graphs_node_num#, sub_rel_graph, relation_ids, static_ent_graph, static_ent_ids
 
     def get_history_graphs(self, head_entity, relation, timestamp, sampled_method='recent', delta_t=1):
         if sampled_method == 'history_copy':
@@ -259,13 +332,14 @@ class QuadruplesDataset(Dataset):
             times1 = self.timeInvDict[(head_entity, relation)]
             times2 = self.timeInvDict[head_entity]
             history_times1 = times1[:times1.index(timestamp)]
-            history_times1 = list(filter(lambda x: timestamp - x > delta_t * self.time_span, history_times1))
+            history_times1 = list(filter(lambda x: timestamp - x > 0, history_times1))
             history_times1 = history_times1[max(-(self.history_len // 2), -len(history_times1)):]
             history_times2 = times2[:times2.index(timestamp)]
-            history_times2 = list(filter(lambda x: timestamp - x > delta_t * self.time_span, history_times2))
+            history_times2 = list(filter(lambda x: timestamp - x > 0, history_times2))
             history_times2 = history_times2[max(-(self.history_len // 2), -len(history_times2)):]
-            last_time = [max([timestamp - self.time_span * delta_t, -1])]
-            history_times = sorted(list(set(history_times1 + history_times2 + last_time)))
+            history_times = sorted(list(set(history_times1 + history_times2)))
+            if len(history_times) == 0:
+                history_times = [-1]
         else:
             times = self.timeInvDict[head_entity]
             history_times = times[:times.index(timestamp)]
@@ -274,8 +348,10 @@ class QuadruplesDataset(Dataset):
         history_graphs = []
         head_entity_ids = []
         graphs_node_num = []
+        history_rel_graphs = []
         for i, t in enumerate(history_times):
             sub_graph = self.dglGraphs.get_nhop_subgraph(t, head_entity, self.nhop)
+            #sub_rel_graph = self.dglGraphs.get_nhop_rel_subgraph(relation,time = t,n = self.nhop)
 
             if self.edge_sample:
                 sub_graph = self.dglGraphs.edge_samples(head_entity, sub_graph, self.edges_conf[relation])
@@ -284,10 +360,16 @@ class QuadruplesDataset(Dataset):
             sub_graph.edata['query_ent'] = torch.ones_like(sub_graph.edata['type']) * head_entity
             # sub_graph.edata['query_time'] = torch.ones_like(sub_graph.edata['type']) * timestamp
             history_graphs.append(sub_graph)
+            #history_rel_graphs.append(sub_rel_graph)
             head_entity_ids.append(sub_graph.ndata['id'].squeeze(1).tolist().index(head_entity))
             graphs_node_num.append(sub_graph.num_nodes())
 
-        return history_graphs, history_times, head_entity_ids, graphs_node_num
+        #static_rel_graph = dgl.merge(history_rel_graphs)
+        #relation_ids = static_rel_graph.ndata['id'].squeeze(1).tolist().index(relation)
+        #static_ent_graph = dgl.merge(history_graphs)
+        #static_ent_ids = static_ent_graph.ndata['id'].squeeze(1).tolist().index(head_entity)
+        #relation_ids = 0
+        return history_graphs, history_times, head_entity_ids, graphs_node_num#, static_rel_graph, relation_ids, static_ent_graph, static_ent_ids
 
     @staticmethod
     def collate_fn(batch, pad_entity):
@@ -301,6 +383,10 @@ class QuadruplesDataset(Dataset):
         history_times = batch_data[5]
         head_entity_ids = batch_data[6]
         graphs_node_num = batch_data[7]
+        #sub_rel_graph = batch_data[8]
+        #relation_ids = batch_data[9]
+        #static_ent_graph = batch_data[10]
+        #static_ent_ids = batch_data[11]
 
         max_history_len = max([len(t) for t in history_times] + [1])
         max_nodes_num = max(sum(graphs_node_num, [1]))
@@ -308,6 +394,7 @@ class QuadruplesDataset(Dataset):
         pad_history_graphs = []
         pad_history_times = []
         pad_history_eids = []
+
         for i in range(len(history_graphs)):
             hgs = history_graphs[i]
             hts = history_times[i]
@@ -364,4 +451,24 @@ class QuadruplesDataset(Dataset):
         timestamps = torch.tensor(timestamps)  # [bs]
         pad_history_times = torch.tensor(pad_history_times)  # [bs, history_len]
 
-        return head_entites, relations, tail_entities, timestamps, pad_history_graphs, pad_history_times, batch_node_ids
+        #sub_rel_graph = dgl.batch(sub_rel_graph)
+        #batch_rel_ids = torch.tensor(relation_ids)
+        #batchgraph_rels_num = sub_rel_graph.batch_num_nodes()
+        #graph_num = batchgraph_rels_num.size(0)
+        #offset_rel_ids = batchgraph_rels_num.unsqueeze(0).repeat(graph_num, 1)
+        #offset_mask = torch.tril(torch.ones(graph_num, graph_num), diagonal=-1).long()
+        #offset_rel_ids = offset_rel_ids * offset_mask
+        #offset_rel_ids = torch.sum(offset_rel_ids, dim=1)
+        #batch_rel_ids += offset_rel_ids
+
+        #static_ent_graph = dgl.batch(static_ent_graph)
+        #batch_static_ent_ids = torch.tensor(static_ent_ids)
+        #batchstat_ents_num = static_ent_graph.batch_num_nodes()
+        #graph_num = batchstat_ents_num.size(0)
+        #offset_ent_ids = batchstat_ents_num.unsqueeze(0).repeat(graph_num, 1)
+        #offset_mask = torch.tril(torch.ones(graph_num, graph_num), diagonal=-1).long()
+        #offset_ent_ids = offset_ent_ids * offset_mask
+        #offset_ent_ids = torch.sum(offset_ent_ids, dim=1)
+        #batch_static_ent_ids += offset_ent_ids
+
+        return head_entites, relations, tail_entities, timestamps, pad_history_graphs, pad_history_times, batch_node_ids#, sub_rel_graph, batch_rel_ids, static_ent_graph,batch_static_ent_ids

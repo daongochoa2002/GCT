@@ -17,8 +17,8 @@ def parse_args(args=None):
         usage='main.py [<args>] [-h | --help]'
     )
 
-    parser.add_argument('--data_root', type=str, default='data')
-    parser.add_argument('--output_root', type=str, default='output')
+    parser.add_argument('--data_root', type=str, default='/media/lnthanh01/workspaces/dnhoa/GHT/data')
+    parser.add_argument('--output_root', type=str, default='./output')
     parser.add_argument('--model_name', type=str, default='GHT')
     parser.add_argument('--batch_size', type=int, default=256)
 
@@ -34,7 +34,7 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--valid_epoch', default=1, type=int)
-    parser.add_argument('--history_len', default=10, type=int)
+    parser.add_argument('--history_len', default=6, type=int)
     parser.add_argument('--dropout', default=0.2, type=float)
 
     parser.add_argument('--seqTransformerLayerNum', default=2, type=int)
@@ -62,28 +62,29 @@ def parse_args(args=None):
 
 def test(model, testloader, skip_dict, device):
     model.eval()
+    model.to('cpu')
     ranks = []
     logs = []
-    TimeMSE = 0.
-    TimeMAE = 0.
+    #TimeMSE = 0.
+    #TimeMAE = 0.
     with torch.no_grad():
         for sub, rel, obj, time, history_graphs, history_times, batch_node_ids in tqdm(testloader):
-            sub = sub.to(device, non_blocking=True)
-            rel = rel.to(device, non_blocking=True)
-            obj = obj.to(device, non_blocking=True)
-            time = time.to(device, non_blocking=True)
-            history_graphs = history_graphs.to(device, non_blocking=True)
-            history_times = history_times.to(device, non_blocking=True)
-            batch_node_ids = batch_node_ids.to(device, non_blocking=True)
+            sub = sub.to('cpu', non_blocking=True)
+            rel = rel.to('cpu', non_blocking=True)
+            obj = obj.to('cpu', non_blocking=True)
+            time = time.to('cpu', non_blocking=True)
+            history_graphs = history_graphs.to('cpu', non_blocking=True)
+            history_times = history_times.to('cpu', non_blocking=True)
+            batch_node_ids = batch_node_ids.to('cpu', non_blocking=True)
+            #sub_rel_graph = sub_rel_graph.to('cpu', non_blocking=True)
+            #batch_rel_ids = batch_rel_ids.to('cpu', non_blocking=True)
+            #static_ent_graph  = static_ent_graph.to('cpu', non_blocking=True)
+            #batch_static_ent_ids = batch_static_ent_ids.to('cpu', non_blocking=True)
 
-            scores, estimate_dt, dur_last = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids,
-                                                               args.beta)
+            #scores, estimate_dt, dur_last = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids,
+            #                                                   args.beta)
+            scores = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids, args.beta)
 
-            mse_loss = torch.nn.MSELoss(reduction='sum')(estimate_dt, dur_last)
-            mae_loss = torch.nn.L1Loss(reduction='sum')(estimate_dt, dur_last)
-
-            TimeMSE += mse_loss
-            TimeMAE += mae_loss
 
             _, rank_idx = scores.sort(dim=1, descending=True)
             rank = torch.nonzero(rank_idx == obj.view(-1, 1))[:, 1].view(-1)
@@ -121,8 +122,9 @@ def test(model, testloader, skip_dict, device):
 
     for metric in logs[0].keys():
         metrics[metric] = sum([log[metric] for log in logs]) / len(logs)
-    metrics['Time MSE'] = TimeMSE / len(testloader.dataset)
-    metrics['Time MAE'] = TimeMAE / len(testloader.dataset)
+    #metrics['Time MSE'] = TimeMSE / len(testloader.dataset)
+    #metrics['Time MAE'] = TimeMAE / len(testloader.dataset)
+    model.to(device)
     return metrics
 
 
@@ -142,10 +144,15 @@ def train_epoch(args, model, traindataloader, optimizer, scheduler, device, epoc
             history_graphs = history_graphs.to(device, non_blocking=True)
             history_times = history_times.to(device, non_blocking=True)
             batch_node_ids = batch_node_ids.to(device, non_blocking=True)
+            #sub_rel_graph = sub_rel_graph.to(device, non_blocking=True)
+            #batch_rel_ids = batch_rel_ids.to(device, non_blocking=True)
+            #static_ent_graph = static_ent_graph.to(device, non_blocking=True)
+            #batch_static_ent_ids = batch_static_ent_ids.to(device, non_blocking=True)
 
-            lp_loss, tp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
-            loss = lp_loss + args.alpha * tp_loss
-            # loss = lp_loss
+            #lp_loss, tp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
+            lp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
+            #loss = lp_loss + args.alpha * tp_loss
+            loss = lp_loss
             loss.backward()
 
             total_loss += loss
@@ -156,7 +163,8 @@ def train_epoch(args, model, traindataloader, optimizer, scheduler, device, epoc
             optimizer.zero_grad()
 
             bar.update(1)
-            bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss, tp_loss='%.4f' % tp_loss)
+            #bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss, tp_loss='%.4f' % tp_loss)
+            bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss)
 
         logging.info('Epoch {} Train Loss: {}'.format(epoch, total_loss/total_num))
 

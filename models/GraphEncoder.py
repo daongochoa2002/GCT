@@ -11,8 +11,9 @@ class RGTLayer(nn.Module):
         self.d_model = d_model
         self.n_head = n_head
         self.msg_fc = nn.Linear(self.d_model * 2, self.n_head * self.d_model, bias=False)
+        #self.msg_fc = nn.Linear(self.d_model, self.n_head * self.d_model, bias=False)
 
-        self.qw = nn.Linear(self.d_model, self.n_head * self.d_model, bias=False)
+        self.qw = nn.Linear(self.d_model * 2, self.n_head * self.d_model, bias=False)
         self.kw = nn.Linear(self.d_model * 2, self.n_head * self.d_model, bias=False)
         self.temp = self.d_model ** 0.5
 
@@ -27,10 +28,12 @@ class RGTLayer(nn.Module):
 
     def msg_func(self, edges):
         msg = self.msg_fc(torch.cat([edges.src['h'], edges.data['h']], dim=-1))
+        #msg = self.msg_fc(edges.data['h'])
         msg = F.leaky_relu(msg)
         msg = self.dropout(msg)
-        q = self.qw(edges.data['qrh']) / self.temp
+        q = self.qw(torch.cat([edges.data['qrh'],edges.data['qeh']],dim=-1)) / self.temp
         k = self.kw(torch.cat([edges.src['h'], edges.data['h']], dim=-1))
+        #k = self.kw(edges.data['h'])
         msg = msg.view(-1, self.n_head, self.d_model)
         q = q.view(-1, self.n_head, self.d_model)
         k = k.view(-1, self.n_head, self.d_model)
@@ -131,6 +134,64 @@ class RGCNEncoder(nn.Module):
         super(RGCNEncoder, self).__init__()
         self.layer1 = RGCNLayer(ent_dim, ent_dim, num_rels, num_bases, True, torch.nn.functional.relu, True, dropout)
         self.layer2 = RGCNLayer(ent_dim, ent_dim, num_rels, num_bases, True, None, True, dropout)
+
+    def forward(self, g):
+        self.layer1(g)
+        self.layer2(g)
+        return g.ndata['h']
+
+class RGATLayer(nn.Module):
+    def __init__(self, in_dim, out_dim, feat_drop=0.3, attn_drop=0.3):
+        super(RGATLayer, self).__init__()
+        self.attn_fc = nn.Linear(3 * out_dim, 1, bias=False)
+        self.fc = nn.Linear(in_dim, out_dim, bias=False)
+        self.fc_r = nn.Linear(in_dim, out_dim, bias=False)
+        
+        self.loop_weight = nn.Parameter(torch.Tensor(out_dim, out_dim))
+        self.reset_parameters()
+        self.feat_drop = nn.Dropout(feat_drop)
+        self.atten_drop = nn.Dropout(attn_drop)
+        self.h_dim = out_dim
+
+    def reset_parameters(self):
+        """Reinitialize learnable parameters."""
+        gain = nn.init.calculate_gain('relu')
+        nn.init.xavier_uniform_(self.fc.weight, gain=gain)
+        nn.init.xavier_uniform_(self.attn_fc.weight, gain=gain)
+        nn.init.xavier_uniform_(self.loop_weight, gain=gain)
+
+    def edge_attention(self, edges):
+        msg = torch.cat([edges.src['h'], edges.dst['h'], edges.data['h']], dim=1)
+        att = self.attn_fc(msg)
+        return {'e': F.leaky_relu(att)}
+
+    def message_func(self, edges):
+        # message UDF for equation (3) & (4)
+        return {'z': edges.src['h'], 'e': edges.data['h'], 'r_h': edges.data['h']}
+
+    def reduce_func(self, nodes):
+        # reduce UDF for equation (3) & (4)
+        # equation (3)
+        alpha = self.atten_drop(F.softmax(nodes.mailbox['e'], dim=1))
+        # equation (4)
+        h = self.feat_drop(torch.sum(alpha * (nodes.mailbox['z'] + nodes.mailbox['r_h']), dim=1) + torch.mm(nodes.data['h'], self.loop_weight))
+        return {'h': h}
+
+    def forward(self, g, edge_update=False):
+        g.ndata['h'] = self.fc(g.ndata['h'])
+        g.edata['h'] = self.fc_r(g.edata['h'])
+            # equation (2)
+        g.apply_edges(self.edge_attention)
+            # equation (3) & (4)
+        g.update_all(self.message_func, self.reduce_func)
+        g.ndata['h'] = F.relu(g.ndata['h'])
+        return g
+
+class RGATEncoder(nn.Module):
+    def __init__(self, ent_dim, dropout=0.3):
+        super(RGATEncoder, self).__init__()
+        self.layer1 = RGATLayer(ent_dim, ent_dim)
+        self.layer2 = RGATLayer(ent_dim, ent_dim)
 
     def forward(self, g):
         self.layer1(g)
