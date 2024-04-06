@@ -9,6 +9,7 @@ class GRUEncoder(nn.Module):
         super(GRUEncoder, self).__init__()
         self.rnn = nn.GRU(input_dim, hidden_dim, batch_first=True)
 
+
     def forward(self, seq_entities):
         _, s_h = self.rnn(seq_entities)
         return s_h[0]
@@ -22,7 +23,7 @@ class TimeEncoding(nn.Module):
         batch_size = dt.size(0)
         seq_len = dt.size(1)
         dt = dt.view(batch_size, seq_len, 1)
-        t_cos = torch.cos(self.w.view(1, 1, -1) * dt)
+        t_cos = torch.tanh(self.w.view(1, 1, -1) * dt)
         t_sin = torch.sin(self.w.view(1, 1, -1) * dt)
         return t_cos, t_sin
 
@@ -91,7 +92,7 @@ class TempMultiHeadAttention(nn.Module):
 
         self.attention = ScaledDotProductAttention(temperature=(d_k + dim_t) ** 0.5, attn_dropout=0.0)
 
-        self.rpe = nn.Embedding(512, 1)
+        #self.rpe = nn.Embedding(512, 1)
 
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
@@ -108,8 +109,8 @@ class TempMultiHeadAttention(nn.Module):
         k = self.w_ks(k).view(sz_b, len_k, n_head, d_k).transpose(1, 2)  # [batch_size, n_head, seq_len, d_k]
         v = self.w_vs(v).view(sz_b, len_v, n_head, d_v).transpose(1, 2)  # [batch_size, n_head, seq_len, d_v]
 
-        q_time_cos, q_time_sin = self.time_encoding(q_time)   # [batch_size, seq_len, d_t]
-        k_time_cos, k_time_sin = self.time_encoding(k_time)
+        q_time_cos, q_time_sin = self.time_encoding(q_time - q_time)   # [batch_size, seq_len, d_t]
+        k_time_cos, k_time_sin = self.time_encoding(q_time.repeat(1, len_k) - k_time)
 
         q_time_cos, q_time_sin = qtw * q_time_cos.unsqueeze(1).repeat(1, n_head, 1, 1), qtw * q_time_sin.unsqueeze(1).repeat(1, n_head, 1, 1)
         k_time_cos, k_time_sin = k_time_cos.unsqueeze(1).repeat(1, n_head, 1, 1), k_time_sin.unsqueeze(1).repeat(1, n_head, 1, 1)
@@ -145,7 +146,7 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(self, src, src_time, tgt, tgt_time, mask=None):
         output, att = self.attention_layer(tgt, src, src, tgt_time, src_time, mask)
-        print('ATT: ', att)
+        #print('ATT: ', att)
         output = self.ff(output)
         return output
 
@@ -156,7 +157,7 @@ class TransformerEncoder(nn.Module):
         self.layer_stack = nn.ModuleList([
             TransformerEncoderLayer(d_model, d_inner, n_head, dropout)
             for _ in range(n_layers)])
-        self.position = nn.Embedding(512, d_model)
+        # self.position = nn.Embedding(512, d_model)
 
     def forward(self, src, src_time, tgt, tgt_time, mask=None):
         # src_p = torch.arange(src.size(1), device=src.device)
