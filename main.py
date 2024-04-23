@@ -11,6 +11,20 @@ from utils import set_logger
 import pickle
 import math
 
+def init_seeds(seed=0, deterministic=False):
+    # Initialize random number generator (RNG) seeds https://pytorch.org/docs/stable/notes/randomness.html
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # for Multi-GPU, exception safe
+    torch.backends.cudnn.benchmark = True
+    if deterministic:
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.deterministic = True
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        os.environ["PYTHONHASHSEED"] = str(seed)
+        
 def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description='Training and Testing Temporal Knowledge Graph Reasoning Models',
@@ -304,6 +318,7 @@ def main(args):
 
 
 if __name__ == '__main__':
+    init_seeds()
     args = parse_args()
     main(args)
 
