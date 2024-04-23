@@ -17,7 +17,7 @@ def parse_args(args=None):
         usage='main.py [<args>] [-h | --help]'
     )
 
-    parser.add_argument('--data_root', type=str, default='/media/lnthanh01/workspaces/dnhoa/GHT/data')
+    parser.add_argument('--data_root', type=str, default='data')
     parser.add_argument('--output_root', type=str, default='./output')
     parser.add_argument('--model_name', type=str, default='GHT')
     parser.add_argument('--batch_size', type=int, default=256)
