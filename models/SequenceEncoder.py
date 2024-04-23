@@ -109,8 +109,8 @@ class TempMultiHeadAttention(nn.Module):
         k = self.w_ks(k).view(sz_b, len_k, n_head, d_k).transpose(1, 2)  # [batch_size, n_head, seq_len, d_k]
         v = self.w_vs(v).view(sz_b, len_v, n_head, d_v).transpose(1, 2)  # [batch_size, n_head, seq_len, d_v]
 
-        q_time_cos, q_time_sin = self.time_encoding(q_time - q_time)   # [batch_size, seq_len, d_t]
-        k_time_cos, k_time_sin = self.time_encoding(q_time.repeat(1, len_k) - k_time)
+        q_time_cos, q_time_sin = self.time_encoding(q_time)   # [batch_size, seq_len, d_t]
+        k_time_cos, k_time_sin = self.time_encoding(k_time)
 
         q_time_cos, q_time_sin = qtw * q_time_cos.unsqueeze(1).repeat(1, n_head, 1, 1), qtw * q_time_sin.unsqueeze(1).repeat(1, n_head, 1, 1)
         k_time_cos, k_time_sin = k_time_cos.unsqueeze(1).repeat(1, n_head, 1, 1), k_time_sin.unsqueeze(1).repeat(1, n_head, 1, 1)
