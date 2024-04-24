@@ -291,6 +291,7 @@ def main(args):
         logging.info('Start Training......')
 
         for i in range(args.max_epochs):
+            train_epoch(args, model, trainDataLoader, optimizer, warmup_scheduler, device, i)
             if i % args.valid_epoch == 0 and i != 0:
                 model_save_path = os.path.join(output_path, 'model_{}.pth'.format(i))
                 torch.save({
@@ -305,8 +306,6 @@ def main(args):
 
                     for mode in metrics.keys():
                         logging.info('Delta_t {} Valid {} : {}'.format(delta_t, mode, metrics[mode]))
-
-            train_epoch(args, model, trainDataLoader, optimizer, warmup_scheduler, device, i)
 
     if args.do_test:
         logging.info('Start Testing......')
