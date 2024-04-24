@@ -1,4 +1,5 @@
 import argparse
+import random
 import torch
 import os
 from tqdm import tqdm
@@ -24,19 +25,19 @@ def init_seeds(seed=0, deterministic=False):
         torch.backends.cudnn.deterministic = True
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
         os.environ["PYTHONHASHSEED"] = str(seed)
-        
+
 def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description='Training and Testing Temporal Knowledge Graph Reasoning Models',
         usage='main.py [<args>] [-h | --help]'
     )
 
-    parser.add_argument('--data_root', type=str, default='data')
+    parser.add_argument('--data_root', type=str, default='./data')
     parser.add_argument('--output_root', type=str, default='./output')
-    parser.add_argument('--model_name', type=str, default='GHT')
+    parser.add_argument('--model_name', type=str, default='GCT')
     parser.add_argument('--batch_size', type=int, default=256)
 
-    parser.add_argument('--num_works', type=int, default=8)
+    parser.add_argument('--num_works', type=int, default=2)
 
     parser.add_argument('--grad_norm', type=float, default=1.0)
     parser.add_argument('--weight_decay', type=float, default=0.00001)
@@ -48,15 +49,15 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--valid_epoch', default=1, type=int)
-    parser.add_argument('--history_len', default=6, type=int)
+    parser.add_argument('--history_len', default=3, type=int)
     parser.add_argument('--dropout', default=0.2, type=float)
 
     parser.add_argument('--seqTransformerLayerNum', default=2, type=int)
-    parser.add_argument('--seqTransformerHeadNum', default=2, type=int)
+    parser.add_argument('--seqTransformerHeadNum', default=3, type=int)
 
     parser.add_argument('--load_model_path', default='output', type=str)
 
-    parser.add_argument('--history_mode', default='delta_t_windows', type=str)
+    parser.add_argument('--history_mode', default='both', type=str)
     parser.add_argument('--nhop', default=1, type=int)
     parser.add_argument('--forecasting_t_win_size', default=1, type=int)
 
@@ -321,4 +322,3 @@ if __name__ == '__main__':
     init_seeds()
     args = parse_args()
     main(args)
-
