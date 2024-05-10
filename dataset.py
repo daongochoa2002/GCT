@@ -190,9 +190,10 @@ class DGLGraphDataset(object):
             rel = np.concatenate((rel, rel + num_rels))
         else:
             src, rel, dst = np.array([]), np.array([]), np.array([])
-        g = dgl.DGLGraph()
-        g.add_nodes(num_nodes)
-        g.add_edges(src, dst)
+        #g = dgl.DGLGraph()
+        g = dgl.graph((src, dst), num_nodes=num_nodes)
+        #g.add_nodes(num_nodes)
+        #g.add_edges(src, dst)
 
         node_id = torch.arange(0, num_nodes, dtype=torch.long).view(-1, 1)
         g.ndata.update({'id': node_id})
@@ -333,10 +334,10 @@ class QuadruplesDataset(Dataset):
             times2 = self.timeInvDict[head_entity]
             history_times1 = times1[:times1.index(timestamp)]
             history_times1 = list(filter(lambda x: timestamp - x > 0, history_times1))
-            history_times1 = history_times1[max(-(self.history_len // 2), -len(history_times1)):]
+            history_times1 = history_times1[max(-(self.history_len - self.history_len // 2), -len(history_times1)):]
             history_times2 = times2[:times2.index(timestamp)]
             history_times2 = list(filter(lambda x: timestamp - x > 0, history_times2))
-            history_times2 = history_times2[max(-(self.history_len // 2), -len(history_times2)):]
+            history_times2 = history_times2[max(-(self.history_len - self.history_len // 2), -len(history_times2)):]
             history_times = sorted(list(set(history_times1 + history_times2)))
             if len(history_times) == 0:
                 history_times = [-1]
