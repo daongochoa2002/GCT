@@ -40,11 +40,11 @@ def parse_args(args=None):
     parser.add_argument('--num_works', type=int, default=2)
 
     parser.add_argument('--grad_norm', type=float, default=1.0)
-    parser.add_argument('--weight_decay', type=float, default=0.00001)
+    parser.add_argument('--weight_decay', type=float, default=0.00005)
 
     parser.add_argument('--d_model', default=100, type=int)
     parser.add_argument('--data', default='ICEWS14', type=str)
-    parser.add_argument('--max_epochs', default=30, type=int)
+    parser.add_argument('--max_epochs', default=5, type=int)
     parser.add_argument('--lr', default=0.003, type=float)
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
@@ -292,7 +292,7 @@ def main(args):
 
         for i in range(args.max_epochs):
             train_epoch(args, model, trainDataLoader, optimizer, warmup_scheduler, device, i)
-            if i % args.valid_epoch == 0 and i != 0:
+            if i % args.valid_epoch == 0:
                 model_save_path = os.path.join(output_path, 'model_{}.pth'.format(i))
                 torch.save({
                     'model_state_dict': model.state_dict(),
