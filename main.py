@@ -49,8 +49,8 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--valid_epoch', default=1, type=int)
-    parser.add_argument('--history_len', default=3, type=int)
-    parser.add_argument('--dropout', default=0.2, type=float)
+    parser.add_argument('--history_len', default=2, type=int)
+    parser.add_argument('--dropout', default=0.5, type=float)
 
     parser.add_argument('--seqTransformerLayerNum', default=2, type=int)
     parser.add_argument('--seqTransformerHeadNum', default=3, type=int)
