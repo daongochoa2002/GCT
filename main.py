@@ -77,20 +77,20 @@ def parse_args(args=None):
 
 def test(model, testloader, skip_dict, device):
     model.eval()
-    model.to('cpu')
+    model.to(device)
     ranks = []
     logs = []
     #TimeMSE = 0.
     #TimeMAE = 0.
     with torch.no_grad():
         for sub, rel, obj, time, history_graphs, history_times, batch_node_ids in tqdm(testloader):
-            sub = sub.to('cpu', non_blocking=True)
-            rel = rel.to('cpu', non_blocking=True)
-            obj = obj.to('cpu', non_blocking=True)
-            time = time.to('cpu', non_blocking=True)
-            history_graphs = history_graphs.to('cpu', non_blocking=True)
-            history_times = history_times.to('cpu', non_blocking=True)
-            batch_node_ids = batch_node_ids.to('cpu', non_blocking=True)
+            sub = sub.to(device, non_blocking=True)
+            rel = rel.to(device, non_blocking=True)
+            obj = obj.to(device, non_blocking=True)
+            time = time.to(device, non_blocking=True)
+            history_graphs = history_graphs.to(device, non_blocking=True)
+            history_times = history_times.to(device, non_blocking=True)
+            batch_node_ids = batch_node_ids.to(device, non_blocking=True)
             #sub_rel_graph = sub_rel_graph.to('cpu', non_blocking=True)
             #batch_rel_ids = batch_rel_ids.to('cpu', non_blocking=True)
             #static_ent_graph  = static_ent_graph.to('cpu', non_blocking=True)
