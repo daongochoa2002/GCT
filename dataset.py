@@ -325,9 +325,9 @@ class QuadruplesDataset(Dataset):
             times1 = self.timeInvDict[(head_entity, relation)]
             times2 = self.timeInvDict[head_entity]
             history_times1 = times1[:times1.index(timestamp)]
-            history_times1 = history_times1[max(-(self.history_len // 2), -len(history_times1)):]
+            history_times1 = history_times1[max(-self.history_len, -len(history_times1)):]
             history_times2 = times2[:times2.index(timestamp)]
-            history_times2 = history_times2[max(-(self.history_len - self.history_len // 2), -len(history_times2)):]
+            history_times2 = history_times2[max(-max(self.history_len - len(history_times1),1), -len(history_times2)):]
             history_times = sorted(list(set(history_times1 + history_times2)))
         elif sampled_method == 'delta_t_windows':
             times1 = self.timeInvDict[(head_entity, relation)]
