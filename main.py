@@ -44,12 +44,12 @@ def parse_args(args=None):
 
     parser.add_argument('--d_model', default=100, type=int)
     parser.add_argument('--data', default='ICEWS14', type=str)
-    parser.add_argument('--max_epochs', default=5, type=int)
+    parser.add_argument('--max_epochs', default=1, type=int)
     parser.add_argument('--lr', default=0.003, type=float)
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--valid_epoch', default=1, type=int)
-    parser.add_argument('--history_len', default=2, type=int)
+    parser.add_argument('--history_len', default=6, type=int)
     parser.add_argument('--dropout', default=0.5, type=float)
 
     parser.add_argument('--seqTransformerLayerNum', default=2, type=int)
@@ -302,7 +302,7 @@ def main(args):
                 for delta_t in range(args.forecasting_t_win_size):
                     delta_t = delta_t + 1
                     testDataLoader.dataset.delta_t = delta_t
-                    metrics = test(model, validDataLoader, baseDataset.skip_dict, device)
+                    metrics = test(model, testDataLoader, baseDataset.skip_dict, device)
 
                     for mode in metrics.keys():
                         logging.info('Delta_t {} Valid {} : {}'.format(delta_t, mode, metrics[mode]))
