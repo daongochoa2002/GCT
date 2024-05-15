@@ -10,7 +10,7 @@ class RGTLayer(nn.Module):
         super(RGTLayer, self).__init__()
         self.d_model = d_model
         self.n_head = n_head
-        self.msg_fc = nn.Linear(self.d_model * 4, self.n_head * self.d_model, bias=False)
+        self.msg_fc = nn.Linear(self.d_model * 2, self.n_head * self.d_model, bias=False)
         #self.msg_fc = nn.Linear(self.d_model, self.n_head * self.d_model, bias=False)
 
         self.qw = nn.Linear(self.d_model * 2, self.n_head * self.d_model, bias=False)
@@ -27,7 +27,7 @@ class RGTLayer(nn.Module):
         nn.init.xavier_uniform_(self.msg_fc.weight)
 
     def msg_func(self, edges):
-        msg = self.msg_fc(torch.cat([edges.src['h'], edges.data['h'],edges.data['qrh'],edges.data['qeh']], dim=-1))
+        msg = self.msg_fc(torch.cat([edges.src['h'], edges.data['h']], dim=-1))
         #msg = self.msg_fc(edges.data['h'])
         msg = F.leaky_relu(msg)
         msg = self.dropout(msg)
@@ -57,7 +57,7 @@ class RGTLayer(nn.Module):
         return g
 
 class RGTEncoder(nn.Module):
-    def __init__(self, d_model, drop=0.1, n_head=1):
+    def __init__(self, d_model, drop=0.1, n_head=2):
         super(RGTEncoder, self).__init__()
         self.layer1 = RGTLayer(d_model, n_head, drop)
         self.layer2 = RGTLayer(d_model, n_head, drop)
