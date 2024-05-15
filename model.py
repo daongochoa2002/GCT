@@ -40,14 +40,14 @@ class TemporalTransformerHawkesGraphModel(nn.Module):
 
         self.ent_embeds = nn.Embedding(self.n_ent, self.d_model)
         self.rel_embeds = nn.Embedding(self.n_rel, self.d_model)
-        #self.graph_encoder = RGTEncoder(self.d_model, self.dropout_rate)
-        self.graph_encoder = RGCNEncoder(self.d_model, self.n_rel, self.d_model//2, self.dropout_rate)
+        self.graph_encoder = RGTEncoder(self.d_model, self.dropout_rate)
+        #self.graph_encoder = RGCNEncoder(self.d_model, self.n_rel, self.d_model//2, self.dropout_rate)
         self.seq_encoder = TransformerEncoder(self.d_model, self.d_model, self.transformer_layer_num,
                                               self.transformer_head_num, self.dropout_rate)
         self.linear_inten_layer = nn.Linear(self.d_model * 3, self.d_model, bias=False)
         
         self.dropout = nn.Dropout(self.dropout_rate)
-        #self.Softplus = nn.Softplus(beta=0.5)
+        self.Softplus = nn.Softplus(beta=10)
         self.lp_loss_fn = LabelSmoothingCrossEntropy(eps)
         self.ent_decoder = ConvTransE(self.n_ent,self.d_model, self.dropout_rate, self.dropout_rate, self.dropout_rate)
 
@@ -86,12 +86,18 @@ class TemporalTransformerHawkesGraphModel(nn.Module):
             self.dropout(torch.cat((query_ent_embeds, output, query_rel_embeds), dim=-1)))  # [bs, d_model]
 
         #global_intes = inten_raw.mm(self.ent_embeds.weight.transpose(0, 1))  # [bs, ent_num]
+        global_type = torch.arange(self.n_ent, device=output.device).unsqueeze(0).repeat(bs, 1)
         global_intes = self.ent_decoder(query_ent_embeds,query_rel_embeds, output,self.ent_embeds.weight)
+        global_intes *= (global_type != self.PAD_ENTITY) + 0.2
+        non_history = torch.zeros_like(global_intes)
         local_h = total_nodes_h.reshape([bs, -1, self.d_model])  # [bs, max_nodes_num * seq_len, d_model]
         local_intes = torch.matmul(inten_raw.unsqueeze(1), local_h.transpose(1, 2))[:, -1, :]  # [bs, max_nodes_num * seq_len]
-        intens = F.softmax(torch.cat([global_intes, local_intes], dim=-1),dim=-1)
+        history =  torch.ones_like(local_intes)
+        history_tag = torch.cat([non_history, history], dim=-1)
+        local_intes *= (local_type != self.PAD_ENTITY) + 0.2
+        intens = self.Softplus(torch.cat([global_intes, local_intes], dim=-1) + history_tag)
 
-        global_type = torch.arange(self.n_ent, device=intens.device).unsqueeze(0).repeat(bs, 1)
+        
         ent_type = torch.cat([global_type, local_type], dim=-1)
         return intens, ent_type
 
@@ -105,7 +111,8 @@ class TemporalTransformerHawkesGraphModel(nn.Module):
         return loss_dt
 
     def ents_score(self, intens, type, local_weight=1.):
-        intens[:, self.n_ent:] = intens[:, self.n_ent:] * local_weight
+        intens = F.softmax(intens, dim=-1)
+        intens[:, self.n_ent:] = intens[:, self.n_ent:] * 0.8
         output = torch_scatter.scatter(intens, type, dim=-1, reduce="max")
         return output[:, :-1]
 
