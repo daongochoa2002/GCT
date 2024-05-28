@@ -27,8 +27,8 @@ class RGTLayer(nn.Module):
         nn.init.xavier_uniform_(self.msg_fc.weight)
 
     def msg_func(self, edges):
-        msg = self.msg_fc(torch.cat([edges.src['h'], edges.data['h']], dim=-1))
-        #msg = self.msg_fc(edges.data['h'])
+        msg = self.msg_fc(torch.cat([edges.src['h'], edges.dst['h']], dim=-1))
+        msg = torch.multiply(msg, edges.data['h'])
         msg = F.leaky_relu(msg)
         msg = self.dropout(msg)
         q = self.qw(torch.cat([edges.data['qrh'],edges.data['qeh']],dim=-1)) / self.temp
@@ -44,7 +44,7 @@ class RGTLayer(nn.Module):
         res = nodes.data['h']
         alpha = self.dropout(F.softmax(nodes.mailbox['att'], dim=1))
         h = torch.sum(alpha * nodes.mailbox['msg'], dim=1).view(-1, self.n_head * self.d_model)
-        h = self.dropout(F.leaky_relu(self.output_fc(h)))
+        h = self.dropout(F.gelu(self.output_fc(h)))
         # print(nodes.data['type'])
         # print(alpha.squeeze(-1))
 
@@ -57,7 +57,7 @@ class RGTLayer(nn.Module):
         return g
 
 class RGTEncoder(nn.Module):
-    def __init__(self, d_model, drop=0.1, n_head=2):
+    def __init__(self, d_model, drop=0.1, n_head=1):
         super(RGTEncoder, self).__init__()
         self.layer1 = RGTLayer(d_model, n_head, drop)
         self.layer2 = RGTLayer(d_model, n_head, drop)
