@@ -5,13 +5,6 @@ import numpy as np
 import dgl
 import torch
 
-import os.path
-from collections import defaultdict
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-import dgl
-import torch
-
 class BaseDataset(object):
     def __init__(self, trainpath, testpath, statpath, validpath):
         """base Dataset. Read data files and preprocess.
