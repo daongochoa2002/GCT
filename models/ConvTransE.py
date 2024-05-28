@@ -38,9 +38,6 @@ class ConvTransE(torch.nn.Module):
         x = x.view(batch_size, -1)
         x = self.fc(x)
         x = self.hidden_drop(x)
-
-        x = self.bn2(x)
-        x = F.relu(x)
             
         x = torch.mm(x, all_embeds.transpose(1, 0))
         return x
