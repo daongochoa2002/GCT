@@ -91,7 +91,7 @@ class TemporalTransformerHawkesGraphModel(nn.Module):
         bs, hist_len = history_times.size(0), history_times.size(1)
         #seq_query_input = query_rel_embeds.unsqueeze(1)
         seq_query_time = query_time.view(-1, 1)  # [bs, 1]
-        res_history_gh = torch.cat([query_rel_embeds.unsqueeze(1).repeat(1,hist_len,1),history_gh],dim=-1)
+        res_history_gh = self.dropout(torch.cat([query_rel_embeds.unsqueeze(1).repeat(1,hist_len,1),history_gh],dim=-1))
         res_history_gh = self.dropout(self.conv2(res_history_gh.reshape(bs,2,-1)))
         res_history_gh = self.bn2(res_history_gh)
         res_history_gh = res_history_gh.view(bs,hist_len, -1)
@@ -104,9 +104,9 @@ class TemporalTransformerHawkesGraphModel(nn.Module):
         output = self.seq_encoder(history_gh, history_times, seq_query_input, seq_query_time, history_pad_mask)
         output = output[:, -1, :]
 
-        statics_ent_embeds = self.linear_inten_layer(
-            torch.cat((query_ent_embeds, query_rel_embeds), dim=-1))
-        inten_raw = F.gelu(F.dropout(self.linear_inten_layer1(
+        statics_ent_embeds = self.dropout(self.linear_inten_layer(
+            torch.cat((query_ent_embeds, query_rel_embeds), dim=-1)))
+        inten_raw = F.gelu(self.dropout(self.linear_inten_layer1(
             torch.cat((statics_ent_embeds, output), dim=-1)))) +statics_ent_embeds
         inten_raw = self.layer_norm(inten_raw)
         #global_intes = inten_raw.mm(self.ent_embeds.weight.transpose(0, 1))  # [bs, ent_num]
