@@ -1,5 +1,4 @@
 import argparse
-import random
 import torch
 import os
 from tqdm import tqdm
@@ -12,52 +11,38 @@ from utils import set_logger
 import pickle
 import math
 
-def init_seeds(seed=0, deterministic=False):
-    # Initialize random number generator (RNG) seeds https://pytorch.org/docs/stable/notes/randomness.html
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # for Multi-GPU, exception safe
-    torch.backends.cudnn.benchmark = True
-    if deterministic:
-        torch.use_deterministic_algorithms(True)
-        torch.backends.cudnn.deterministic = True
-        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-        os.environ["PYTHONHASHSEED"] = str(seed)
-
 def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description='Training and Testing Temporal Knowledge Graph Reasoning Models',
         usage='main.py [<args>] [-h | --help]'
     )
 
-    parser.add_argument('--data_root', type=str, default='./data')
-    parser.add_argument('--output_root', type=str, default='./output')
-    parser.add_argument('--model_name', type=str, default='GCT')
+    parser.add_argument('--data_root', type=str, default='data')
+    parser.add_argument('--output_root', type=str, default='output')
+    parser.add_argument('--model_name', type=str, default='GHT')
     parser.add_argument('--batch_size', type=int, default=256)
 
-    parser.add_argument('--num_works', type=int, default=2)
+    parser.add_argument('--num_works', type=int, default=8)
 
     parser.add_argument('--grad_norm', type=float, default=1.0)
-    parser.add_argument('--weight_decay', type=float, default=0.00005)
+    parser.add_argument('--weight_decay', type=float, default=0.00001)
 
     parser.add_argument('--d_model', default=100, type=int)
     parser.add_argument('--data', default='ICEWS14', type=str)
-    parser.add_argument('--max_epochs', default=1, type=int)
+    parser.add_argument('--max_epochs', default=30, type=int)
     parser.add_argument('--lr', default=0.003, type=float)
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--valid_epoch', default=1, type=int)
-    parser.add_argument('--history_len', default=6, type=int)
+    parser.add_argument('--history_len', default=10, type=int)
     parser.add_argument('--dropout', default=0.5, type=float)
 
     parser.add_argument('--seqTransformerLayerNum', default=2, type=int)
-    parser.add_argument('--seqTransformerHeadNum', default=3, type=int)
+    parser.add_argument('--seqTransformerHeadNum', default=2, type=int)
 
     parser.add_argument('--load_model_path', default='output', type=str)
 
-    parser.add_argument('--history_mode', default='both', type=str)
+    parser.add_argument('--history_mode', default='delta_t_windows', type=str)
     parser.add_argument('--nhop', default=1, type=int)
     parser.add_argument('--forecasting_t_win_size', default=1, type=int)
 
@@ -77,11 +62,10 @@ def parse_args(args=None):
 
 def test(model, testloader, skip_dict, device):
     model.eval()
-    model.to(device)
     ranks = []
     logs = []
-    #TimeMSE = 0.
-    #TimeMAE = 0.
+    TimeMSE = 0.
+    TimeMAE = 0.
     with torch.no_grad():
         for sub, rel, obj, time, history_graphs, history_times, batch_node_ids in tqdm(testloader):
             sub = sub.to(device, non_blocking=True)
@@ -91,15 +75,15 @@ def test(model, testloader, skip_dict, device):
             history_graphs = history_graphs.to(device, non_blocking=True)
             history_times = history_times.to(device, non_blocking=True)
             batch_node_ids = batch_node_ids.to(device, non_blocking=True)
-            #sub_rel_graph = sub_rel_graph.to('cpu', non_blocking=True)
-            #batch_rel_ids = batch_rel_ids.to('cpu', non_blocking=True)
-            #static_ent_graph  = static_ent_graph.to('cpu', non_blocking=True)
-            #batch_static_ent_ids = batch_static_ent_ids.to('cpu', non_blocking=True)
 
-            #scores, estimate_dt, dur_last = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids,
-            #                                                   args.beta)
-            scores = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids, args.beta)
+            scores, estimate_dt, dur_last = model.test_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids,
+                                                               args.beta)
 
+            mse_loss = torch.nn.MSELoss(reduction='sum')(estimate_dt, dur_last)
+            mae_loss = torch.nn.L1Loss(reduction='sum')(estimate_dt, dur_last)
+
+            TimeMSE += mse_loss
+            TimeMAE += mae_loss
 
             _, rank_idx = scores.sort(dim=1, descending=True)
             rank = torch.nonzero(rank_idx == obj.view(-1, 1))[:, 1].view(-1)
@@ -137,9 +121,8 @@ def test(model, testloader, skip_dict, device):
 
     for metric in logs[0].keys():
         metrics[metric] = sum([log[metric] for log in logs]) / len(logs)
-    #metrics['Time MSE'] = TimeMSE / len(testloader.dataset)
-    #metrics['Time MAE'] = TimeMAE / len(testloader.dataset)
-    model.to(device)
+    metrics['Time MSE'] = TimeMSE / len(testloader.dataset)
+    metrics['Time MAE'] = TimeMAE / len(testloader.dataset)
     return metrics
 
 
@@ -159,15 +142,10 @@ def train_epoch(args, model, traindataloader, optimizer, scheduler, device, epoc
             history_graphs = history_graphs.to(device, non_blocking=True)
             history_times = history_times.to(device, non_blocking=True)
             batch_node_ids = batch_node_ids.to(device, non_blocking=True)
-            #sub_rel_graph = sub_rel_graph.to(device, non_blocking=True)
-            #batch_rel_ids = batch_rel_ids.to(device, non_blocking=True)
-            #static_ent_graph = static_ent_graph.to(device, non_blocking=True)
-            #batch_static_ent_ids = batch_static_ent_ids.to(device, non_blocking=True)
 
-            #lp_loss, tp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
-            lp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
-            #loss = lp_loss + args.alpha * tp_loss
-            loss = lp_loss
+            lp_loss, tp_loss = model.train_forward(sub, rel, obj, time, history_graphs, history_times, batch_node_ids)
+            loss = lp_loss + args.alpha * tp_loss
+            # loss = lp_loss
             loss.backward()
 
             total_loss += loss
@@ -178,8 +156,7 @@ def train_epoch(args, model, traindataloader, optimizer, scheduler, device, epoc
             optimizer.zero_grad()
 
             bar.update(1)
-            #bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss, tp_loss='%.4f' % tp_loss)
-            bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss)
+            bar.set_postfix(loss='%.4f' % loss, lp_loss='%.4f' % lp_loss, tp_loss='%.4f' % tp_loss)
 
         logging.info('Epoch {} Train Loss: {}'.format(epoch, total_loss/total_num))
 
@@ -291,8 +268,7 @@ def main(args):
         logging.info('Start Training......')
 
         for i in range(args.max_epochs):
-            train_epoch(args, model, trainDataLoader, optimizer, warmup_scheduler, device, i)
-            if i % args.valid_epoch == 0:
+            if i % args.valid_epoch == 0 and i != 0:
                 model_save_path = os.path.join(output_path, 'model_{}.pth'.format(i))
                 torch.save({
                     'model_state_dict': model.state_dict(),
@@ -307,17 +283,18 @@ def main(args):
                     for mode in metrics.keys():
                         logging.info('Delta_t {} Valid {} : {}'.format(delta_t, mode, metrics[mode]))
 
+            train_epoch(args, model, trainDataLoader, optimizer, warmup_scheduler, device, i)
+
     if args.do_test:
         logging.info('Start Testing......')
         for delta_t in range(args.forecasting_t_win_size):
             delta_t = delta_t + 1
-            testDataLoader.dataset.delta_t = delta_t
-            metrics = test(model, testDataLoader, baseDataset.skip_dict, device)
+            validDataLoader.dataset.delta_t = delta_t
+            metrics = test(model, validDataLoader, baseDataset.skip_dict, device)
             for mode in metrics.keys():
                 logging.info('Delta_t {} Test {} : {}'.format(delta_t, mode, metrics[mode]))
 
 
 if __name__ == '__main__':
-    init_seeds()
     args = parse_args()
     main(args)
