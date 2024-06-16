@@ -327,7 +327,7 @@ class QuadruplesDataset(Dataset):
             times2 = self.timeInvDict[head_entity]
             history_times1 = times1[:times1.index(timestamp)]
             history_times1 = list(filter(lambda x: timestamp - x > 0, history_times1))
-            history_times1 = history_times1[max(-(self.history_len - self.history_len // 2), -len(history_times1)):]
+            history_times1 = history_times1[max(-self.history_len // 2, -len(history_times1)):]
             history_times2 = times2[:times2.index(timestamp)]
             history_times2 = list(filter(lambda x: timestamp - x > 0, history_times2))
             history_times2 = history_times2[max(-(self.history_len - self.history_len // 2), -len(history_times2)):]
